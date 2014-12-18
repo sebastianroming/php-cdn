@@ -4,10 +4,10 @@
 // dynamic file caching pseudo cdn
 /////////////////////////////////////////////////////////////////////////
 // cdn root path   : http://cdn.com/
-// cdn example url : http://cdn.com/path/to/resource.css?d=12345
+// cdn example url : http://cdn.com/<ID>/path/to/resource.css?d=12345
 // maps the uri    : /path/to/resource.css?d=12345
 // to the origin   : http://yoursite.com/path/to/resource.css?d=12345
-// caches file to  : ./cache/[base64-encoded-uri].css
+// caches file to  : ./cache/<ID>/[base64-encoded-uri].css
 // returns local cached copy or issues 304 not modified
 /////////////////////////////////////////////////////////////////////////
 // error_reporting(E_ERROR | E_PARSE);
@@ -15,8 +15,17 @@
 // cache for N seconds (default 1 day)
 $f_expires = 86400;
 
-// the source that we intend to mirror
-$f_origin = 'http://yoursite.com';
+// the sources that we intend to mirror
+$f_a_origin = Array(
+	0	=>	'http://example1.com',
+	1	=>	'http://example2.com',
+	2	=> 	'http://example3.com',
+	3	=>	'http://example4.com',
+);
+
+$f_request_name = explode('/', substr($_SERVER['REQUEST_URI'], 1));
+$f_origin_id 	= (int)array_shift($f_request_name);
+$f_request_name = '/' . implode('/', $f_request_name);
 
 // encode as filename-safe base64
 $f_name = strtr(base64_encode($_SERVER['REQUEST_URI']), '+/=', '-_,');
@@ -27,15 +36,17 @@ $f_ext = strrchr(parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH), '.');
 // assign the correct mime type
 switch ($f_ext) {
 	// images
-	case '.gif'  : $f_type = 'image/gif';                break;
-	case '.jpg'  : $f_type = 'image/jpeg';               break;
-	case '.png'  : $f_type = 'image/png';                break;
-	case '.ico'  : $f_type = 'image/x-icon';             break;
+	case '.gif'  : $f_type = 'image/gif';                				break;
+	case '.jpg'  : $f_type = 'image/jpeg';              				break;
+	case '.png'  : $f_type = 'image/png';                				break;
+	case '.ico'  : $f_type = 'image/x-icon';             				break;
 	// documents
-	case '.js'   : $f_type = 'application/x-javascript'; break;
-	case '.css'  : $f_type = 'text/css';                 break;
-	case '.xml'  : $f_type = 'text/xml';                 break;
-	case '.json' : $f_type = 'application/json';         break;
+	case '.js'   : $f_type = 'application/x-javascript'; 				break;
+	case '.css'  : $f_type = 'text/css';                 				break;
+	case '.xml'  : $f_type = 'text/xml';                 				break;
+	case '.json' : $f_type = 'application/json';         				break;
+	// other files
+	case '.apk'	 : $f_type = 'application/vnd.android.package-archive';	break;
 	// no match
 	default      :
 		// extension is not supported, issue *404*
@@ -45,7 +56,7 @@ switch ($f_ext) {
 }
 
 // construct usable file path
-$f_path = "./cache/{$f_name}{$f_ext}";
+$f_path = "./cache/{$f_origin_id}/{$f_name}{$f_ext}";
 
 // check the local cache
 if (file_exists($f_path)) {
@@ -72,9 +83,10 @@ if (file_exists($f_path)) {
 } else {
 	// http *HEAD* request 
 	// verify that the image exists
+	
 	$ch = curl_init();
 	curl_setopt_array($ch, 	array(
-		CURLOPT_URL            => $f_origin . $_SERVER['REQUEST_URI'],
+		CURLOPT_URL            => $f_a_origin[$f_origin_id] . $f_request_name,
 		CURLOPT_TIMEOUT        => 15,
 		CURLOPT_CONNECTTIMEOUT => 15,
 		CURLOPT_FAILONERROR    => 1,
@@ -97,7 +109,7 @@ if (file_exists($f_path)) {
 			// and write directly to the file
 			$ch2 = curl_init();
 			curl_setopt_array($ch2, 	array(
-				CURLOPT_URL            => $f_origin . $_SERVER['REQUEST_URI'],
+				CURLOPT_URL            => $f_a_origin[$f_origin_id] . $f_request_name,
 				CURLOPT_TIMEOUT        => 15,
 				CURLOPT_CONNECTTIMEOUT => 15,
 				CURLOPT_FAILONERROR    => 1,
@@ -127,7 +139,7 @@ if (file_exists($f_path)) {
 		fclose($fp);
 			
 		// issue *302* for *this* request
-		header('Location: ' . $f_origin . $_SERVER['REQUEST_URI']);
+		header('Location: ' . $f_a_origin[$f_origin_id] . $f_request_name);
 	} else {
 		// the file doesn't exist, issue *404*
 		header($_SERVER['SERVER_PROTOCOL'] . ' 404 Not Found');
